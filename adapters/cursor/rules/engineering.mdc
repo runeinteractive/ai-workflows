@@ -1,0 +1,11 @@
+---
+description: Core engineering standards for AI assistants
+alwaysApply: true
+---
+
+Read and apply the engineering standards:
+
+- Pack checkout: `rules/engineering.md`
+- Vendored project: `.ai-workflows/rules/engineering.md`
+
+Follow that file for the whole session, including the daily workflow loop.

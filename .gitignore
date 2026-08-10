@@ -1,0 +1,11 @@
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+*~
+.idea/
+.vscode/
+.cursor/
+.ai-workflows/
+CLAUDE.ai-workflows.md
+CHATGPT.ai-workflows.md
