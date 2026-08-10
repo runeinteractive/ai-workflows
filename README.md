@@ -42,18 +42,32 @@ Every prompt has **Goal**, **Steps**, **Done when**, and **Next**.
 
 ## Install
 
+### Cursor — user (all your projects)
+
 ```powershell
-.\scripts\install.ps1 -Project C:\path\to\your-app -Adapter cursor
+.\scripts\install.ps1 -Scope user
+```
+
+```bash
+./scripts/install.sh user
+```
+
+Writes skills/rules to `~/.cursor/` and points at this pack’s `prompts/` + `rules/` (no project pollution). Restart Cursor afterwards.
+
+### Project (shared with the team)
+
+```powershell
+.\scripts\install.ps1 -Scope project -Project C:\path\to\your-app -Adapter cursor
 # Adapter: cursor | claude | chatgpt | all
 ```
 
 ```bash
-./scripts/install.sh /path/to/your-app cursor
+./scripts/install.sh project /path/to/your-app cursor
 ```
 
 1. Vendors `prompts/` + `rules/` (+ `LICENSE`) into **`.ai-workflows/`**
-2. Wires adapters from `adapters/cursor/skills/` (single source)
-3. Commit `.ai-workflows/` (and `.cursor/` if you use Cursor) so the team shares one process
+2. Wires adapters from `adapters/cursor/skills/`
+3. Commit `.ai-workflows/` (and `.cursor/` if Cursor) so the team shares one process
 
 Re-run install after updating this pack.
 

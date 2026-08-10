@@ -1,14 +1,17 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Install ai-workflows into a project (prompts + rules + optional adapters).
+  Install ai-workflows for Cursor (user home) or into a project.
 
 .EXAMPLE
-  .\scripts\install.ps1 -Project C:\path\to\app -Adapter cursor
-  .\scripts\install.ps1 -Project C:\path\to\app -Adapter all
+  .\scripts\install.ps1 -Scope user
+  .\scripts\install.ps1 -Scope project -Project C:\path\to\app -Adapter cursor
+  .\scripts\install.ps1 -Scope project -Project C:\path\to\app -Adapter all
 #>
 param(
-  [Parameter(Mandatory = $true)]
+  [ValidateSet('user', 'project')]
+  [string] $Scope = 'user',
+
   [string] $Project,
 
   [ValidateSet('cursor', 'claude', 'chatgpt', 'all')]
@@ -17,9 +20,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$PackRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-$ProjectRoot = (Resolve-Path -LiteralPath $Project).Path
-$Vendor = Join-Path $ProjectRoot '.ai-workflows'
+$PackRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$PackPosix = $PackRoot.Replace('\', '/')
 $PackSkills = Join-Path $PackRoot 'adapters\cursor\skills'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
@@ -47,7 +49,46 @@ function Assert-PromptParity {
   }
 }
 
+function Install-CursorUser {
+  $skillsRoot = Join-Path $env:USERPROFILE '.cursor\skills'
+  $rulesRoot = Join-Path $env:USERPROFILE '.cursor\rules'
+  New-Item -ItemType Directory -Force -Path $skillsRoot | Out-Null
+  New-Item -ItemType Directory -Force -Path $rulesRoot | Out-Null
+
+  $promptPrefix = "$PackPosix/prompts/"
+
+  foreach ($name in Get-WorkflowNames) {
+    $src = Join-Path $PackSkills "$name\SKILL.md"
+    if (-not (Test-Path -LiteralPath $src)) { continue }
+
+    $dir = Join-Path $skillsRoot $name
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+    $text = [System.IO.File]::ReadAllText($src)
+    $text = $text.Replace('../../../../prompts/', $promptPrefix)
+    Write-Utf8File -Path (Join-Path $dir 'SKILL.md') -Content $text
+  }
+
+  $rule = @(
+    '---'
+    'description: Core engineering standards for AI assistants'
+    'alwaysApply: true'
+    '---'
+    ''
+    "Read and apply ``$PackPosix/rules/engineering.md`` for the whole session,"
+    "including the daily workflow loop. Prefer ``$PackPosix/prompts/`` for structured tasks."
+  ) -join "`n"
+  Write-Utf8File -Path (Join-Path $rulesRoot 'engineering.mdc') -Content $rule
+
+  Write-Host "Cursor (user): skills -> $skillsRoot"
+  Write-Host "Cursor (user): rule  -> $(Join-Path $rulesRoot 'engineering.mdc')"
+  Write-Host "Prompts stay in pack: $PackPosix/prompts/"
+}
+
 function Copy-PackContent {
+  param([string] $ProjectRoot)
+
+  $Vendor = Join-Path $ProjectRoot '.ai-workflows'
   New-Item -ItemType Directory -Force -Path (Join-Path $Vendor 'prompts') | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $Vendor 'rules') | Out-Null
 
@@ -71,7 +112,9 @@ function Copy-PackContent {
   Write-Utf8File -Path (Join-Path $Vendor 'README.md') -Content $stamp
 }
 
-function Install-Cursor {
+function Install-CursorProject {
+  param([string] $ProjectRoot)
+
   $skillsRoot = Join-Path $ProjectRoot '.cursor\skills'
   $rulesRoot = Join-Path $ProjectRoot '.cursor\rules'
   New-Item -ItemType Directory -Force -Path $skillsRoot | Out-Null
@@ -99,10 +142,12 @@ function Install-Cursor {
     'including the daily workflow loop. Prefer `.ai-workflows/prompts/` for structured tasks.'
   ) -join "`n"
   Write-Utf8File -Path (Join-Path $rulesRoot 'engineering.mdc') -Content $rule
-  Write-Host 'Cursor: skills -> .cursor/skills/, rule -> .cursor/rules/engineering.mdc'
+  Write-Host 'Cursor (project): skills -> .cursor/skills/, rule -> .cursor/rules/engineering.mdc'
 }
 
-function Install-Claude {
+function Install-ClaudeProject {
+  param([string] $ProjectRoot)
+
   $dest = Join-Path $ProjectRoot 'CLAUDE.ai-workflows.md'
   $rows = foreach ($name in Get-WorkflowNames) {
     "| $name | `.ai-workflows/prompts/$name.md` |"
@@ -124,7 +169,9 @@ function Install-Claude {
   Write-Host 'Claude: wrote CLAUDE.ai-workflows.md - merge into CLAUDE.md'
 }
 
-function Install-ChatGPT {
+function Install-ChatGPTProject {
+  param([string] $ProjectRoot)
+
   $dest = Join-Path $ProjectRoot 'CHATGPT.ai-workflows.md'
   $list = (Get-WorkflowNames) -join ', '
   $content = @(
@@ -138,22 +185,42 @@ function Install-ChatGPT {
   Write-Host 'ChatGPT: wrote CHATGPT.ai-workflows.md - paste into project instructions'
 }
 
+Assert-PromptParity
+
 Write-Host "Pack:    $PackRoot"
-Write-Host "Project: $ProjectRoot"
+Write-Host "Scope:   $Scope"
 Write-Host "Adapter: $Adapter"
 
-Assert-PromptParity
-Copy-PackContent
+if ($Scope -eq 'user') {
+  if ($Adapter -notin @('cursor', 'all')) {
+    throw "Scope 'user' only supports Cursor. Use -Adapter cursor (or all)."
+  }
+  if ($Adapter -eq 'all') {
+    Write-Host "Note: user scope installs Cursor only (claude/chatgpt are project-oriented)."
+  }
+  Install-CursorUser
+  Write-Host 'Done. Restart Cursor (or open a new window) so user skills/rules load.'
+  return
+}
+
+if (-not $Project) {
+  throw "Scope 'project' requires -Project <path>."
+}
+
+$ProjectRoot = (Resolve-Path -LiteralPath $Project).Path
+Write-Host "Project: $ProjectRoot"
+
+Copy-PackContent -ProjectRoot $ProjectRoot
 Write-Host 'Vendored prompts/rules/LICENSE -> .ai-workflows/'
 
 switch ($Adapter) {
-  'cursor' { Install-Cursor }
-  'claude' { Install-Claude }
-  'chatgpt' { Install-ChatGPT }
+  'cursor' { Install-CursorProject -ProjectRoot $ProjectRoot }
+  'claude' { Install-ClaudeProject -ProjectRoot $ProjectRoot }
+  'chatgpt' { Install-ChatGPTProject -ProjectRoot $ProjectRoot }
   'all' {
-    Install-Cursor
-    Install-Claude
-    Install-ChatGPT
+    Install-CursorProject -ProjectRoot $ProjectRoot
+    Install-ClaudeProject -ProjectRoot $ProjectRoot
+    Install-ChatGPTProject -ProjectRoot $ProjectRoot
   }
 }
 
